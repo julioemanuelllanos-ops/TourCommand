@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TourCommand - Real-time Tour Management</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif'],
+                        mono: ['Roboto Mono', 'monospace'], // For Night Watch mode
+                    },
+                    colors: {
+                        'primary-bg': '#0F172A', // slate-900
+                        'secondary-bg': '#1E293B', // slate-800
+                        'accent-blue': '#0EA5E9', // sky-500
+                        'accent-teal': '#14B8A6', // teal-500
+                        'text-light': '#E2E8F0', // slate-200
+                        'text-dark': '#CBD5E1', // slate-300
+                        'border-strong': '#334155', // slate-700
+                        'night-bg': '#000000',
+                        'night-text': '#BEF264', // lime-300
+                        'night-accent': '#22D3EE', // cyan-400
+                        'status-ok': '#22C55E', // green-500
+                        'status-warning': '#EAB308', // yellow-500
+                        'status-critical': '#EF4444', // red-500
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideInTop: {
+                            '0%': { transform: 'translateY(-1rem)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        pulse: {
+                            '0%, 100%': { opacity: '1' },
+                            '50%': { opacity: '.5' },
+                        },
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-out forwards',
+                        'slide-in-top': 'slideInTop 0.5s ease-out forwards',
+                        'pulse-slow': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            @apply bg-primary-bg font-sans text-text-light transition-colors duration-300 ease-in-out;
+        }
+        .night-watch body {
+            @apply bg-night-bg font-mono text-night-text;
+        }
+        .scroll-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .scroll-container::-webkit-scrollbar-track {
+            background: rgba(45, 50, 60, 0.5);
+            border-radius: 10px;
+        }
+        .scroll-container::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 10px;
+        }
+        .scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #64748B;
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div id="app-root" class="min-h-screen flex flex-col pt-20">
+        <!-- Content will be rendered here by JavaScript -->
+    </div>
+
+    <div id="notifications-container" class="fixed top-24 right-4 z-[100] w-full max-w-sm space-y-3">
+        <!-- Notifications will appear here -->
+    </div>
+
+    <!-- Install PWA Modal -->
+    <div id="installModal" class="hidden fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4">
+        <div class="bg-secondary-bg backdrop-blur-md border border-border-strong rounded-lg p-6 shadow-2xl max-w-md w-full animate-fade-in animate-slide-in-top">
+            <h3 class="font-display text-2xl font-bold text-text-light mb-4">Install TourCommand</h3>
+            <p class="text-text-dark mb-4">Add this web app to your home screen for a full-screen experience.</p>
+            <div class="space-y-4 text-text-dark">
+                <div>
+                    <h4 class="font-display font-semibold text-lg text-accent-teal mb-2">Step 1: Host with Vercel (Optional)</h4>
+                    <p>For a reliable deployment, host this application on <a href="https://vercel.com" target="_blank" class="text-accent-blue hover:underline">Vercel</a>. It provides a seamless hosting experience for modern web apps.</p>
+                </div>
+                <div>
+                    <h4 class="font-display font-semibold text-lg text-accent-teal mb-2">Step 2: Add to Home Screen</h4>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li><strong>iOS (Safari):</strong> Tap the <span class="font-mono bg-slate-700/50 rounded px-1 py-0.5 text-text-light">Share</span> button <span class="inline-block align-middle ml-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-text-light">
+                                <path fill-rule="evenodd" d="M15.75 4.5a3 3 0 1 1 .825 2.572L9.455 13.95a3 3 0 0 1-.72.566l-1.002.396a3 3 0 0 1-1.652-.828l-.774-.774a.75.75 0 0 1 1.06-1.06l.775.774c.243.243.528.373.813.373.158 0 .315-.028.465-.084L12.559 7.82c.164-.473.541-.837 1.006-.957a3 3 0 0 1 2.21-1.011zm-.922 13.232a3 3 0 1 1-.365-3.69L15.353 9.4a3 3 0 0 1-.72-.566l-1.002-.396a3 3 0 0 1-1.652.828l-.774.774a.75.75 0 0 1 1.06 1.06l.775-.774c.243-.243.528-.373.813-.373.158 0 .315.028.465.084l3.073 1.086c.164.473.541.837 1.006.957a3 3 0 0 1 2.21-1.011z" clip-rule="evenodd" />
+                            </svg>
+                        </span> then "Add to Home Screen".</li>
+                        <li><strong>Android (Chrome):</strong> Tap the <span class="font-mono bg-slate-700/50 rounded px-1 py-0.5 text-text-light">Menu</span> button <span class="inline-block align-middle ml-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-text-light">
+                                <path fill-rule="evenodd" d="M3 5.25a.75.75 0 0 1 .75-.75h16.5a.75.75 0 0 1 0 1.5H3.75a.75.75 0 0 1-.75-.75Zm0 4.5a.75.75 0 0 1 .75-.75h16.5a.75.75 0 0 1 0 1.5H3.75a.75.75 0 0 1-.75-.75Zm0 4.5a.75.75 0 0 1 .75-.75h16.5a.75.75 0 0 1 0 1.5H3.75a.75.75 0 0 1-.75-.75Zm0 4.5a.75.75 0 0 1 .75-.75h16.5a.75.75 0 0 1 0 1.5H3.75a.75.75 0 0 1-.75-.75Z" clip-rule="evenodd" />
+                            </svg>
+                        </span> (3 dots) then "Add to Home screen".</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end">
+                <button onclick="appState.showInstallModal = false; updateState();" class="bg-accent-blue hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-105 shadow-lg">Got it!</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const MOCK_FIREBASE = true;
+
+        // Mock Firebase (simplified for this exercise)
+        const mockAuth = {
+            currentUser: null,
+            onAuthStateChanged: (callback) => {
+                setTimeout(() => {
+                    mockAuth.currentUser = { uid: 'mockuser123', email: 'mock@example.com' };
+                    callback(mockAuth.currentUser);
+                }, 100);
+            },
+            signInAnonymously: () => {
+                return new Promise(resolve => {
+                    setTimeout(() => {
+                        mockAuth.currentUser = { uid: 'newmockuser' + Math.random().toString(36).substring(2, 9), email: 'anonymous@example.com' };
+                        appState.user = mockAuth.currentUser;
+                        updateState();
+                        resolve();
+                    }, 50);
+                });
+            },
+            signOut: () => {
+                return new Promise(resolve => {
+                    setTimeout(() => {
+                        mockAuth.currentUser = null;
+                        appState.user = null;
+                        updateState();
+                        resolve();
+                    }, 50);
+                });
+            }
+        };
+
+        const mockFirestoreData = {}; // Stores mock tour data
+        const mockFirestoreListeners = {}; // Stores callbacks for mock listeners
+
+        const mockDb = {
+            collection: (colName) => ({
+                doc: (docId) => ({
+                    get: () => Promise.resolve({
+                        exists: !!mockFirestoreData[docId],
+                        data: () => mockFirestoreData[docId]
+                    }),
+                    set: (data) => {
+                        mockFirestoreData[docId] = data;
+                        if (mockFirestoreListeners[docId]) {
+                            mockFirestoreListeners[docId]({ exists: true, data: () => data });
+                        }
+                        return Promise.resolve();
+                    },
+                    onSnapshot: (callback) => {
+                        mockFirestoreListeners[docId] = callback;
+                        // Trigger immediately with current data if exists
+                        if (mockFirestoreData[docId]) {
+                            callback({ exists: true, data: () => mockFirestoreData[docId] });
+                        } else {
+                             // Or with an empty state if it doesn't exist yet, to simulate initial load
+                            callback({ exists: false, data: () => undefined });
+                        }
+                        // Return unsubscribe function
+                        return () => { delete mockFirestoreListeners[docId]; };
+                    }
+                })
+            })
+        };
+
+        const auth = MOCK_FIREBASE ? mockAuth : { /* real firebase auth */ };
+        const db = MOCK_FIREBASE ? mockDb : { /* real firebase db */ };
+
+        /** Types and Interfaces (for documentation purposes) */
+        /**
+         * @typedef {'SCHEDULED' | 'ONGOING' | 'COMPLETED' | 'DELAYED' | 'CRITICAL'} EventStatus
+         */
+        /**
+         * @typedef {'Manager' | 'Crew'} UserRole
+         */
+        /**
+         * @typedef {Object} TourEvent
+         * @property {string} id
+         * @property {string} time
+         * @property {string} title
+         * @property {string} location
+         * @property {string} city
+         * @property {string} type
+         * @property {EventStatus} status
+         * @property {boolean} [alert] - Optional, for critical status
+         */
+
+        const INITIAL_EVENTS = [
+            { id: 'ev1', time: '08:00', title: 'Arrival & Setup', location: 'Main Stage Entrance', city: 'London', type: 'Logistics', status: 'SCHEDULED' },
+            { id: 'ev2', time: '09:00', title: 'Soundcheck - Band A', location: 'Main Stage', city: 'London', type: 'Performance', status: 'ONGOING' },
+            { id: 'ev3', time: '10:30', title: 'Crew Briefing', location: 'Green Room 1', city: 'London', type: 'Meeting', status: 'SCHEDULED' },
+            { id: 'ev4', time: '11:00', title: 'Lighting Check', location: 'Main Stage', city: 'London', type: 'Technical', status: 'DELAYED' },
+            { id: 'ev5', time: '12:00', title: 'Lunch Break', location: 'Catering Tent', city: 'London', type: 'Logistics', status: 'SCHEDULED' },
+            { id: 'ev6', time: '13:00', title: 'Band B Rehearsal', location: 'Main Stage', city: 'London', type: 'Performance', status: 'SCHEDULED' },
+            { id: 'ev7', time: '15:00', title: 'VIP Meet & Greet', location: 'VIP Lounge', city: 'London', type: 'Hospitality', status: 'SCHEDULED' },
+            { id: 'ev8', time: '17:00', title: 'Doors Open', location: 'Main Entrance', city: 'London', type: 'Logistics', status: 'SCHEDULED' },
+            { id: 'ev9', time: '18:00', title: 'Concert Start', location: 'Main Stage', city: 'London', type: 'Performance', status: 'SCHEDULED' },
+            { id: 'ev10', time: '22:00', title: 'Concert End', location: 'Main Stage', city: 'London', type: 'Performance', status: 'SCHEDULED' },
+            { id: 'ev11', time: '23:00', title: 'Load Out Begins', location: 'Main Stage Exit', city: 'London', type: 'Logistics', status: 'SCHEDULED' },
+        ];
+
+        const ICONS = {
+            logo: `<svg class="w-8 h-8 text-accent-teal" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 3L11.25 5.25L15 7.5L11.25 9.75L9.75 12L6 9.75L9.75 7.5L9.75 3Z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75V21" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 13.5L8.25 10.5M13.5 13.5L15.75 10.5M12 10.5V13.5" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 7.5V16.5M4.5 7.5V16.5M12 15V21" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z" />
+                </svg>`,
+            sun: `<svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                </svg>`,
+            moon: `<svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                </svg>`,
+            user: `<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                    <path fill-rule="evenodd" d="M7.5 6a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0ZM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695Z" clip-rule="evenodd" />
+                </svg>`,
+            map: `<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"></path>
+                </svg>`,
+            weather: `<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 3a3 3 0 00-3-3H9a3 3 0 00-3 3v1.5a.75.75 0 00.75.75h9a.75.75 0 00.75-.75V3z"></path>
+                </svg>`,
+            edit: `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-14.806 14.806a.75.75 0 00-.272.528V21.75a.75.75 0 00.75.75h4.5a.75.75 0 00.528-.272l14.806-14.806a2.625 2.625 0 000-3.712zm-14.562 12.4L4.92 19.022 7.02 21.12l2.324-2.324 2.1-2.1-4.66-4.66Z" />
+                </svg>`,
+            trash: `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path fill-rule="evenodd" d="M16.5 4.478v.227a48.845 48.845 0 013.878.512.75.75 0 11-.233 1.488l-.708-.425M5.25 4.478v.227c-.1.082-.205.17-.31.257A48.841 48.841 0 013 6.75c0 .243.018.484.054.721l.006.059V19.5a3 3 0 003 3h12a3 3 0 003-3V7.5c0-.18-.014-.357-.04-.533L20.5 5.251A48.791 48.791 0 0016.5 4.478zM15.75 2.25a.75.75 0 00-1.5 0v.846L10.957 2.21a.75.75 0 00-.83-.163L6.953 2.94a.75.75 0 00-.78.114V.75a.75.75 0 00-1.5 0v1.99L2.3 3.61A.75.75 0 002 4.25v16.25a2.25 2.25 0 002.25 2.25h15.5a2.25 2.25 0 002.25-2.25V4.25a.75.75 0 00-.3-.64L19.5 2.94a.75.75 0 00-.78-.114L14.773 2.809A.75.75 0 0013.945 3.5v.846a.75.75 0 001.5 0V2.25z" clip-rule="evenodd" />
+                </svg>`,
+            plus: `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path fill-rule="evenodd" d="M12 3.75a.75.75 0 01.75.75v6.75h6.75a.75.75 0 010 1.5h-6.75v6.75a.75.75 0 01-1.5 0v-6.75H4.5a.75.75 0 010-1.5h6.75V4.5a.75.75 0 01.75-.75Z" clip-rule="evenodd" />
+                </svg>`,
+            check: `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path fill-rule="evenodd" d="M19.967 8.39a.75.75 0 00-1.28-1.026L11.5 14.162l-3.235-3.235a.75.75 0 00-1.06 1.06l3.75 3.75a.75.75 0 001.06 0l7.5-7.5Z" clip-rule="evenodd" />
+                </svg>`,
+            x: `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06Z" clip-rule="evenodd" />
+                </svg>`,
+            fire: `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M15.75 1.5a6 6 0 00-6 6v3.752c0 .826-.184 1.63-.524 2.361-1.025 2.261-2.918 3.784-5.322 4.148A14.243 14.243 0 004.5 21a.75.75 0 00.916.748 15.341 15.341 0 0010.706-5.114 2.25 2.25 0 00-.17-.184V10.5h.002a2.25 2.25 0 012.246-2.247c.212 0 .422.02.628.058v-.773A6 6 0 0015.75 1.5ZM7.5 17.25c-.207 0-.395-.125-.47-.317a.75.75 0 011.171-.856c.266.368.59.626.963.747a.75.75 0 01-.664 1.426Z" />
+                </svg>`,
+            info: `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm11.077-4.197a.75.75 0 00-1.354-.372c-.22.61-.482 1.2-.767 1.76l-.41.815a4.5 4.5 0 01-.845 1.054c-.114.093-.243.155-.373.197-.245.081-.5.122-.75.122A.75.75 0 0010.5 14a.75.75 0 00.75.75c.162 0 .324-.028.48-.083.565-.2.943-.722 1.13-1.423.482-.5.83-1.077 1.076-1.688.22-.556.398-1.127.536-1.696.096-.372.152-.75.174-1.125a.75.75 0 00-.75-.75Zm-2.316 6.372a.75.75 0 01.75-.75c.207 0 .395.125.47.317a.75.75 0 01-1.171.856c-.266-.368-.59-.626-.963-.747a.75.75 0 01.664-1.426Z" clip-rule="evenodd" />
+                </svg>`,
+        };
+
+        function getIconSvg(name, classes = '') {
+            return ICONS[name] ? ICONS[name].replace('<svg', `<svg class="${classes}"`) : '';
+        }
+
+        const appState = {
+            user: null, // {uid: '...', email: '...'}
+            view: 'login', // 'login' | 'dashboard' | 'nightWatch'
+            role: 'Crew', // 'Manager' | 'Crew'
+            tourId: '',
+            currentTime: new Date(),
+            events: [], // Array of TourEvent objects
+            editEvents: [], // Temporary state for editing events
+            nightWatchMode: false,
+            activeTab: 'cronograma', // 'cronograma' | 'mapaTactico'
+            notifications: [], // {id: '...', message: '...', type: 'info|success|warning|error'}
+            loading: false,
+            hasChaos: false,
+            showInstallModal: false,
+            isEditing: false, // UI state for event editing
+            firestoreListenerUnsubscribe: null,
+            mockTourDataExists: false, // To simulate if a tour ID has data
+        };
+
+        function updateState(newState = {}) {
+            Object.assign(appState, newState);
+            // Re-render UI after state update
+            renderApp();
+            // console.log('State updated:', appState); // For debugging
+        }
+
+        function showNotification(message, type = 'info', duration = 3000) {
+            const id = Date.now();
+            appState.notifications.push({ id, message, type });
+            updateState({ notifications: appState.notifications });
+
+            setTimeout(() => {
+                appState.notifications = appState.notifications.filter(n => n.id !== id);
+                updateState({ notifications: appState.notifications });
+            }, duration);
+        }
+
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
+        }
+
+        // --- Core Rendering Functions ---
+        function renderApp() {
+            const appRoot = document.getElementById('app-root');
+            if (!appRoot) return;
+
+            // Clear previous content
+            appRoot.innerHTML = '';
+
+            // Render notifications
+            const notificationsContainer = document.getElementById('notifications-container');
+            if (notificationsContainer) {
+                notificationsContainer.innerHTML = appState.notifications.map(n => {
+                    const bgColor = {
+                        'info': 'bg-accent-blue/80',
+                        'success': 'bg-status-ok/80',
+                        'warning': 'bg-status-warning/80',
+                        'error': 'bg-status-critical/80'
+                    }[n.type];
+                    const icon = {
+                        'info': getIconSvg('info', 'w-5 h-5'),
+                        'success': getIconSvg('check', 'w-5 h-5'),
+                        'warning': getIconSvg('info', 'w-5 h-5'),
+                        'error': getIconSvg('x', 'w-5 h-5')
+                    }[n.type];
+                    return `
+                        <div class="flex items-start p-4 rounded-lg shadow-lg ${bgColor} text-white animate-fade-in animate-slide-in-top backdrop-blur-sm border border-white/10">
+                            <div class="flex-shrink-0 mr-3">${icon}</div>
+                            <div class="flex-grow">
+                                <p class="font-semibold text-sm">${escapeHTML(n.message)}</p>
+                            </div>
+                            <button onclick="appState.notifications = appState.notifications.filter(item => item.id !== ${n.id}); updateState();" class="ml-auto text-white hover:text-gray-200">
+                                ${getIconSvg('x', 'w-4 h-4')}
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // Render install modal
+            const installModal = document.getElementById('installModal');
+            if (installModal) {
+                installModal.classList.toggle('hidden', !appState.showInstallModal);
+            }
+
+            // Apply Night Watch mode class to body
+            document.body.classList.toggle('night-watch', appState.nightWatchMode);
+
+            if (appState.loading) {
+                appRoot.innerHTML = `
+                    <div class="flex flex-col items-center justify-center flex-grow text-text-light">
+                        <div class="animate-spin rounded-full h-12 w-12 border-4 border-accent-teal border-t-transparent mb-4"></div>
+                        <p class="font-display text-xl">Loading TourCommand...</p>
+                    </div>
+                `;
+                return;
+            }
+
+            if (!appState.user || !appState.tourId) {
+                renderLogin(appRoot);
+            } else if (appState.nightWatchMode) {
+                renderNightWatchMode(appRoot);
+            } else {
+                renderDashboard(appRoot);
+            }
+        }
+
+        function renderLogin(container) {
+            container.classList.add('flex', 'flex-col', 'items-center', 'justify-center', 'text-center', 'py-10', 'px-4');
+            container.innerHTML = `
+                <div class="bg-secondary-bg backdrop-blur-md border border-border-strong rounded-2xl p-8 md:p-10 shadow-2xl max-w-lg w-full transform transition-all duration-500 ease-in-out hover:scale-[1.01]">
+                    <div class="flex justify-center mb-6">
+                        ${getIconSvg('logo', 'w-16 h-16')}
+                    </div>
+                    <h1 class="font-display text-4xl md:text-5xl font-extrabold text-text-light mb-4 leading-tight">TourCommand</h1>
+                    <p class="text-text-dark text-lg mb-8 max-w-md mx-auto">Real-time tour management at your fingertips. Join an existing mission or forge a new path.</p>
+
+                    <div class="space-y-4">
+                        <input type="text" id="tourIdInput" placeholder="Enter Tour ID" class="w-full p-4 rounded-xl bg-primary-bg border border-border-strong focus:border-accent-blue focus:ring-1 focus:ring-accent-blue outline-none text-text-light placeholder-text-dark text-lg transition-all duration-300 ease-in-out shadow-inner" oninput="appState.tourId = this.value.trim()">
+                        <button id="joinTourBtn" class="w-full bg-accent-blue hover:bg-sky-600 text-white font-display font-semibold py-4 rounded-xl transition-all duration-300 ease-in-out transform hover:scale-[1.02] shadow-lg text-lg">
+                            Join Existing Tour
+                        </button>
+                        <div class="flex items-center">
+                            <hr class="flex-grow border-border-strong">
+                            <span class="px-3 text-text-dark text-sm">OR</span>
+                            <hr class="flex-grow border-border-strong">
+                        </div>
+                        <button id="createTourBtn" class="w-full bg-accent-teal hover:bg-teal-600 text-white font-display font-semibold py-4 rounded-xl transition-all duration-300 ease-in-out transform hover:scale-[1.02] shadow-lg text-lg">
+                            Create New Tour
+                        </button>
+                    </div>
+
+                    <p class="text-text-dark text-sm mt-8">Your journey starts here. Secure, swift, and simple.</p>
+                </div>
+            `;
+
+            document.getElementById('tourIdInput').value = appState.tourId;
+            document.getElementById('joinTourBtn').onclick = joinTour;
+            document.getElementById('createTourBtn').onclick = createTour;
+        }
+
+        function renderNightWatchMode(container) {
+            container.classList.add('flex', 'flex-col', 'items-center', 'justify-center', 'text-center', 'flex-grow', 'bg-night-bg', 'text-night-text', 'font-mono', 'py-10', 'px-4');
+            
+            let nextEvent = appState.events
+                .filter(e => e.status !== 'COMPLETED')
+                .sort((a, b) => new Date(`2000/01/01 ${a.time}`) - new Date(`2000/01/01 ${b.time}`))
+                .find(e => new Date(`2000/01/01 ${e.time}`) > appState.currentTime);
+
+            container.innerHTML = `
+                <div class="w-full max-w-2xl bg-black border border-night-accent/50 rounded-lg p-6 shadow-2xl text-center">
+                    <h1 class="text-6xl font-bold mb-4 animate-pulse-slow">${appState.currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}</h1>
+                    <p class="text-2xl text-night-accent mb-8">${appState.tourId.toUpperCase()}</p>
+                    ${nextEvent ? `
+                        <div class="border-t border-night-accent/30 pt-8 mt-8">
+                            <h2 class="text-3xl font-semibold mb-2">${escapeHTML(nextEvent.title)}</h2>
+                            <p class="text-xl text-night-text/80">${escapeHTML(nextEvent.time)} - ${escapeHTML(nextEvent.location)}</p>
+                            <p class="text-lg text-night-text/60">${escapeHTML(nextEvent.type)}</p>
+                            <span class="inline-block text-sm px-3 py-1 rounded-full ${nextEvent.status === 'CRITICAL' ? 'bg-red-800 text-red-300 animate-pulse' : 'bg-night-accent/20 text-night-accent'} mt-4">
+                                STATUS: ${escapeHTML(nextEvent.status)}
+                            </span>
+                        </div>
+                    ` : `
+                        <p class="text-xl text-night-text/80 mt-8">No upcoming events.</p>
+                    `}
+                    <button onclick="toggleNightWatchMode()" class="mt-12 px-6 py-3 border border-night-accent text-night-accent rounded-lg hover:bg-night-accent/20 transition duration-300">Exit Night Watch Mode</button>
+                </div>
+            `;
+        }
+
+        function renderDashboard(container) {
+            container.classList.remove('flex', 'flex-col', 'items-center', 'justify-center', 'text-center');
+            container.classList.add('flex-grow', 'max-w-6xl', 'mx-auto', 'w-full', 'p-4', 'pb-10', 'space-y-6');
+
+            // Header (fixed, already in HTML, just needs dynamic updates)
+            const headerHtml = `
+                <div class="fixed top-0 inset-x-0 z-50 bg-primary-bg/80 backdrop-blur-lg border-b border-border-strong py-3 px-4 shadow-xl">
+                    <div class="max-w-7xl mx-auto flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            ${getIconSvg('logo', 'w-8 h-8')}
+                            <span class="font-display text-2xl font-bold text-text-light hidden sm:block">TourCommand</span>
+                            <span class="font-display text-xl font-bold text-accent-teal ml-4">${escapeHTML(appState.tourId.toUpperCase())}</span>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <span class="text-text-dark text-sm font-semibold px-3 py-1 rounded-full bg-secondary-bg/50 border border-border-strong">${appState.role.toUpperCase()}</span>
+
+                            <button onclick="toggleNightWatchMode()" class="p-2 rounded-full text-text-dark hover:text-accent-blue hover:bg-secondary-bg transition-all duration-300 ease-in-out group" title="Toggle Night Watch Mode">
+                                ${appState.nightWatchMode ? getIconSvg('sun', 'w-5 h-5 group-hover:text-accent-blue') : getIconSvg('moon', 'w-5 h-5 group-hover:text-accent-blue')}
+                            </button>
+                            <button onclick="showInstallModal()" class="p-2 rounded-full text-text-dark hover:text-accent-blue hover:bg-secondary-bg transition-all duration-300 ease-in-out group" title="Install App">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 group-hover:text-accent-blue">
+                                    <path fill-rule="evenodd" d="M12 2.25a.75.75 0 01.75.75v11.69l3.528-3.529a.75.75 0 111.06 1.06l-4.75 4.75a.75.75 0 01-1.06 0l-4.75-4.75a.75.75 0 111.06-1.06l3.528 3.529V3a.75.75 0 01.75-.75Z" clip-rule="evenodd" />
+                                    <path fill-rule="evenodd" d="M3 15.75a.75.75 0 01.75-.75h7.5a.75.75 0 010 1.5h-7.5a.75.75 0 01-.75-.75Zm.75 2.25a.75.75 0 000 1.5h16.5a.75.75 0 000-1.5H3.75Z" clip-rule="evenodd" />
+                                </svg>
+                            </button>
+                            <button onclick="resetIdentity()" class="p-2 rounded-full text-text-dark hover:text-red-500 hover:bg-secondary-bg transition-all duration-300 ease-in-out group" title="Logout / Change Tour">
+                                ${getIconSvg('user', 'w-5 h-5 group-hover:text-red-500')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            // Inject header only if it's not already there or needs dynamic update
+            const existingHeader = document.querySelector('body > div.fixed');
+            if (!existingHeader) {
+                document.body.insertAdjacentHTML('afterbegin', headerHtml);
+            } else {
+                // A more robust update would be to diff children, but for simplicity, re-inject for now
+                existingHeader.outerHTML = headerHtml;
+            }
+
+
+            // Main Dashboard content
+            container.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Tab Navigation -->
+                    <div class="md:col-span-3 flex justify-center space-x-2 p-1 bg-secondary-bg/60 border border-border-strong rounded-full shadow-inner overflow-hidden">
+                        <button onclick="updateState({activeTab: 'cronograma'})" class="flex-1 text-center py-2 px-4 rounded-full font-semibold transition-all duration-300 ease-in-out ${appState.activeTab === 'cronograma' ? 'bg-accent-blue text-white shadow-md' : 'text-text-dark hover:bg-primary-bg/50'}">
+                            Cronograma
+                        </button>
+                        <button onclick="updateState({activeTab: 'mapaTactico'})" class="flex-1 text-center py-2 px-4 rounded-full font-semibold transition-all duration-300 ease-in-out ${appState.activeTab === 'mapaTactico' ? 'bg-accent-blue text-white shadow-md' : 'text-text-dark hover:bg-primary-bg/50'}">
+                            Mapa Táctico
+                        </button>
+                    </div>
+
+                    <!-- Event Management Section -->
+                    <div class="md:col-span-2 space-y-4">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="font-display text-3xl font-bold text-text-light">Event Timeline</h2>
+                            ${appState.role === 'Manager' ? `
+                                <button onclick="toggleEditMode()" class="px-4 py-2 rounded-lg ${appState.isEditing ? 'bg-status-critical hover:bg-red-600' : 'bg-accent-blue hover:bg-sky-600'} text-white font-semibold transition-all duration-300 ease-in-out transform hover:scale-105 shadow-md">
+                                    ${appState.isEditing ? 'Exit Edit Mode' : 'Edit Events'}
+                                </button>
+                            ` : `
+                                <span class="text-text-dark italic bg-secondary-bg/50 px-3 py-1 rounded-lg border border-border-strong">Modo Visualización (Solo Lectura)</span>
+                            `}
+                        </div>
+
+                        <!-- Events List -->
+                        <div id="events-list" class="space-y-3 scroll-container max-h-[calc(100vh-280px)] overflow-y-auto pr-2">
+                            ${appState.isEditing ? renderEditableEvents() : renderEventCards()}
+                            ${appState.isEditing && appState.role === 'Manager' ? `
+                                <button onclick="addEvent()" class="w-full flex items-center justify-center p-4 bg-secondary-bg/60 border border-border-strong text-accent-teal hover:bg-secondary-bg hover:text-accent-blue rounded-xl transition-all duration-300 ease-in-out transform hover:scale-[1.005] shadow-md">
+                                    ${getIconSvg('plus', 'w-5 h-5 mr-2')} Add New Event
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+
+                    <!-- Manager Controls / Info Panel -->
+                    <div class="md:col-span-1 space-y-4">
+                        <div class="bg-secondary-bg/60 backdrop-blur-md border border-border-strong rounded-2xl p-6 shadow-xl space-y-4">
+                            <h3 class="font-display text-2xl font-bold text-text-light border-b border-border-strong pb-3 mb-4">Tour Overview</h3>
+                            <p class="text-text-dark"><strong>Active Tour:</strong> ${escapeHTML(appState.tourId.toUpperCase())}</p>
+                            <p class="text-text-dark"><strong>User Role:</strong> ${escapeHTML(appState.role)}</p>
+                            <p class="text-text-dark"><strong>Current Time:</strong> ${appState.currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}</p>
+                            ${appState.hasChaos ? `
+                                <div class="flex items-center text-status-critical bg-status-critical/20 border border-status-critical/50 p-3 rounded-lg animate-pulse-slow">
+                                    ${getIconSvg('fire', 'w-6 h-6 mr-2')}
+                                    <span class="font-semibold">Chaos Protocol Active!</span>
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        ${appState.role === 'Manager' ? `
+                            <div class="bg-secondary-bg/60 backdrop-blur-md border border-border-strong rounded-2xl p-6 shadow-xl space-y-4">
+                                <h3 class="font-display text-2xl font-bold text-text-light border-b border-border-strong pb-3 mb-4">Manager Controls</h3>
+                                <button id="triggerChaosBtn" onclick="triggerChaos()" class="w-full bg-red-700 hover:bg-red-600 text-white font-semibold py-3 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-[1.01] shadow-md">
+                                    ${getIconSvg('fire', 'w-5 h-5 mr-2')} Simular Caos
+                                </button>
+                                <button id="resetTourBtn" onclick="resetTour()" class="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-semibold py-3 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-[1.01] shadow-md">
+                                    Reset Tour Events
+                                </button>
+                                <button id="saveChangesBtn" onclick="saveChanges()" class="w-full ${appState.isEditing ? 'bg-status-ok hover:bg-green-600' : 'bg-gray-600 cursor-not-allowed'} text-white font-semibold py-3 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-[1.01] shadow-md" ${!appState.isEditing ? 'disabled' : ''}>
+                                    ${getIconSvg('check', 'w-5 h-5 mr-2')} Guardar Cambios
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderEventCards() {
+            if (appState.events.length === 0) {
+                return `<div class="p-6 bg-secondary-bg/50 border border-border-strong rounded-xl text-text-dark text-center">No events scheduled.</div>`;
+            }
+            return appState.events.map(event => {
+                const statusColor = {
+                    'SCHEDULED': 'text-accent-blue bg-accent-blue/20',
+                    'ONGOING': 'text-accent-teal bg-accent-teal/20',
+                    'COMPLETED': 'text-gray-500 bg-gray-700/20',
+                    'DELAYED': 'text-status-warning bg-status-warning/20',
+                    'CRITICAL': 'text-status-critical bg-status-critical/20 animate-pulse'
+                }[event.status] || 'text-text-dark bg-secondary-bg/50';
+
+                return `
+                    <div class="event-card bg-secondary-bg/60 backdrop-blur-md border border-border-strong rounded-xl p-4 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all duration-300 ease-in-out transform hover:scale-[1.005] hover:shadow-xl group">
+                        <div class="flex-grow">
+                            <div class="flex items-center mb-1">
+                                <span class="text-xl font-display font-semibold text-accent-blue mr-3">${escapeHTML(event.time)}</span>
+                                <h3 class="text-lg font-semibold text-text-light group-hover:text-accent-teal transition-colors duration-300">${escapeHTML(event.title)}</h3>
+                            </div>
+                            <p class="text-text-dark text-sm mb-1">${escapeHTML(event.location)} - ${escapeHTML(event.city)}</p>
+                            <span class="inline-block text-xs px-2 py-0.5 rounded-full ${statusColor} font-medium">${escapeHTML(event.status)}</span>
+                        </div>
+                        <div class="flex-shrink-0 flex space-x-2 mt-3 md:mt-0">
+                            <button onclick="openMap('${escapeHTML(event.location)}, ${escapeHTML(event.city)}')" class="p-2 rounded-full bg-primary-bg/50 text-text-dark hover:text-accent-blue hover:bg-primary-bg transition-all duration-300 ease-in-out group-hover:scale-110" title="View on Map">
+                                ${getIconSvg('map', 'w-5 h-5')}
+                            </button>
+                            <button onclick="openWeather('${escapeHTML(event.city)}')" class="p-2 rounded-full bg-primary-bg/50 text-text-dark hover:text-accent-teal hover:bg-primary-bg transition-all duration-300 ease-in-out group-hover:scale-110" title="Check Weather">
+                                ${getIconSvg('weather', 'w-5 h-5')}
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderEditableEvents() {
+            return appState.editEvents.map((event, index) => {
+                const statusOptions = ['SCHEDULED', 'ONGOING', 'COMPLETED', 'DELAYED', 'CRITICAL'];
+                return `
+                    <div class="bg-secondary-bg/60 backdrop-blur-md border border-border-strong rounded-xl p-4 shadow-lg space-y-2 relative">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label for="time-${index}" class="block text-text-dark text-xs mb-1">Time</label>
+                                <input type="time" id="time-${index}" value="${escapeHTML(event.time)}" onchange="handleEditChange(event, '${event.id}', 'time')" class="w-full p-2 rounded bg-primary-bg border border-border-strong text-text-light focus:border-accent-blue outline-none text-sm">
+                            </div>
+                            <div>
+                                <label for="title-${index}" class="block text-text-dark text-xs mb-1">Title</label>
+                                <input type="text" id="title-${index}" value="${escapeHTML(event.title)}" onchange="handleEditChange(event, '${event.id}', 'title')" class="w-full p-2 rounded bg-primary-bg border border-border-strong text-text-light focus:border-accent-blue outline-none text-sm">
+                            </div>
+                            <div>
+                                <label for="location-${index}" class="block text-text-dark text-xs mb-1">Location</label>
+                                <input type="text" id="location-${index}" value="${escapeHTML(event.location)}" onchange="handleEditChange(event, '${event.id}', 'location')" class="w-full p-2 rounded bg-primary-bg border border-border-strong text-text-light focus:border-accent-blue outline-none text-sm">
+                            </div>
+                            <div>
+                                <label for="city-${index}" class="block text-text-dark text-xs mb-1">City</label>
+                                <input type="text" id="city-${index}" value="${escapeHTML(event.city)}" onchange="handleEditChange(event, '${event.id}', 'city')" class="w-full p-2 rounded bg-primary-bg border border-border-strong text-text-light focus:border-accent-blue outline-none text-sm">
+                            </div>
+                            <div>
+                                <label for="type-${index}" class="block text-text-dark text-xs mb-1">Type</label>
+                                <input type="text" id="type-${index}" value="${escapeHTML(event.type)}" onchange="handleEditChange(event, '${event.id}', 'type')" class="w-full p-2 rounded bg-primary-bg border border-border-strong text-text-light focus:border-accent-blue outline-none text-sm">
+                            </div>
+                            <div>
+                                <label for="status-${index}" class="block text-text-dark text-xs mb-1">Status</label>
+                                <select id="status-${index}" onchange="handleEditChange(event, '${event.id}', 'status')" class="w-full p-2 rounded bg-primary-bg border border-border-strong text-text-light focus:border-accent-blue outline-none text-sm">
+                                    ${statusOptions.map(s => `<option value="${s}" ${s === event.status ? 'selected' : ''}>${s}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <button onclick="deleteEvent('${event.id}')" class="absolute top-2 right-2 p-1 rounded-full bg-red-600/80 text-white hover:bg-red-700 transition-all duration-300 ease-in-out" title="Delete Event">
+                            ${getIconSvg('trash', 'w-4 h-4')}
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // --- Firebase Interaction / Mock Functions ---
+        async function createTour() {
+            if (appState.loading) return;
+            updateState({ loading: true });
+            const newTourId = 'tour_' + Math.random().toString(36).substring(2, 8);
+            try {
+                if (MOCK_FIREBASE) {
+                    await db.collection('tours').doc(newTourId).set({
+                        events: INITIAL_EVENTS,
+                        hasChaos: false,
+                        createdAt: new Date().toISOString(),
+                    });
+                } else {
+                    // Actual Firebase implementation here
+                }
+                updateState({ tourId: newTourId, events: INITIAL_EVENTS, hasChaos: false, loading: false, view: 'dashboard' });
+                showNotification(`Tour '${newTourId}' created successfully!`, 'success');
+            } catch (error) {
+                console.error("Error creating tour:", error);
+                showNotification("Failed to create tour.", 'error');
+            } finally {
+                updateState({ loading: false });
+            }
+        }
+
+        async function joinTour() {
+            if (appState.loading) return;
+            const tourId = appState.tourId;
+            if (!tourId) {
+                showNotification('Please enter a Tour ID.', 'warning');
+                return;
+            }
+            updateState({ loading: true });
+            try {
+                let doc;
+                if (MOCK_FIREBASE) {
+                    doc = await db.collection('tours').doc(tourId).get();
+                } else {
+                    // Actual Firebase implementation here
+                }
+
+                if (doc.exists) {
+                    const data = doc.data();
+                    updateState({
+                        tourId: tourId,
+                        events: data.events || [],
+                        hasChaos: data.hasChaos || false,
+                        loading: false,
+                        view: 'dashboard',
+                        mockTourDataExists: true // Indicate data exists for this ID
+                    });
+                    showNotification(`Joined tour '${tourId}'!`, 'success');
+                } else {
+                    showNotification(`Tour ID '${tourId}' not found.`, 'error');
+                    updateState({ loading: false, mockTourDataExists: false });
+                }
+            } catch (error) {
+                console.error("Error joining tour:", error);
+                showNotification("Failed to join tour.", 'error');
+            } finally {
+                updateState({ loading: false });
+            }
+        }
+
+        async function resetIdentity() {
+            if (appState.loading) return;
+            updateState({ loading: true });
+            try {
+                if (MOCK_FIREBASE) {
+                    await auth.signOut();
+                    await auth.signInAnonymously();
+                } else {
+                    // Actual Firebase implementation here
+                }
+                updateState({
+                    tourId: '',
+                    events: [],
+                    view: 'login',
+                    isEditing: false,
+                    hasChaos: false,
+                    loading: false
+                });
+                if (appState.firestoreListenerUnsubscribe) {
+                    appState.firestoreListenerUnsubscribe();
+                    updateState({ firestoreListenerUnsubscribe: null });
+                }
+                showNotification('Logged out. Please join or create a new tour.', 'info');
+            } catch (error) {
+                console.error("Error resetting identity:", error);
+                showNotification("Failed to reset identity.", 'error');
+            } finally {
+                updateState({ loading: false });
+            }
+        }
+
+        async function saveChanges() {
+            if (appState.loading || !appState.isEditing || appState.role !== 'Manager') return;
+            updateState({ loading: true });
+            try {
+                if (MOCK_FIREBASE) {
+                    await db.collection('tours').doc(appState.tourId).set({
+                        events: appState.editEvents,
+                        hasChaos: appState.hasChaos,
+                        updatedAt: new Date().toISOString(),
+                    }, { merge: true });
+                } else {
+                    // Actual Firebase implementation here
+                }
+                updateState({ events: appState.editEvents, isEditing: false, loading: false });
+                showNotification('Changes saved successfully!', 'success');
+            } catch (error) {
+                console.error("Error saving changes:", error);
+                showNotification("Failed to save changes.", 'error');
+            } finally {
+                updateState({ loading: false });
+            }
+        }
+
+        async function triggerChaos() {
+            if (appState.loading || appState.role !== 'Manager') return;
+            updateState({ loading: true });
+            const chaoticEvents = appState.events.map(event => {
+                const newStatus = Math.random() < 0.3 ? 'CRITICAL' : (Math.random() < 0.6 ? 'DELAYED' : event.status);
+                let newTime = event.time;
+                if (newStatus === 'DELAYED' || newStatus === 'CRITICAL') {
+                    const [h, m] = event.time.split(':').map(Number);
+                    const newHour = h + Math.floor(Math.random() * 2); // Delay by up to 2 hours
+                    newTime = `${String(Math.min(23, newHour)).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                }
+                return { ...event, status: newStatus, time: newTime };
+            });
+
+            try {
+                if (MOCK_FIREBASE) {
+                    await db.collection('tours').doc(appState.tourId).set({
+                        events: chaoticEvents,
+                        hasChaos: true,
+                        updatedAt: new Date().toISOString(),
+                    }, { merge: true });
+                } else {
+                    // Actual Firebase implementation here
+                }
+                updateState({ events: chaoticEvents, hasChaos: true, loading: false });
+                showNotification('Chaos unleashed! Adapt and overcome.', 'warning');
+            } catch (error) {
+                console.error("Error triggering chaos:", error);
+                showNotification("Failed to trigger chaos.", 'error');
+            } finally {
+                updateState({ loading: false });
+            }
+        }
+
+        async function resetTour() {
+            if (appState.loading || appState.role !== 'Manager') return;
+            updateState({ loading: true });
+            try {
+                if (MOCK_FIREBASE) {
+                    await db.collection('tours').doc(appState.tourId).set({
+                        events: INITIAL_EVENTS,
+                        hasChaos: false,
+                        updatedAt: new Date().toISOString(),
+                    }, { merge: true });
+                } else {
+                    // Actual Firebase implementation here
+                }
+                updateState({ events: INITIAL_EVENTS, hasChaos: false, isEditing: false, loading: false });
+                showNotification('Tour events reset to initial state.', 'success');
+            } catch (error) {
+                console.error("Error resetting tour:", error);
+                showNotification("Failed to reset tour.", 'error');
+            } finally {
+                updateState({ loading: false });
+            }
+        }
+
+        // --- Event Editing Functions ---
+        function toggleEditMode() {
+            if (appState.role !== 'Manager') return;
+            if (appState.isEditing) {
+                updateState({ isEditing: false, editEvents: [] }); // Discard changes
+                showNotification('Edit mode exited. Changes discarded.', 'info');
+            } else {
+                updateState({ isEditing: true, editEvents: JSON.parse(JSON.stringify(appState.events)) }); // Deep copy
+                showNotification('Edit mode enabled. Make your changes.', 'info');
+            }
+        }
+
+        function handleEditChange(event, eventId, field) {
+            const newEditEvents = appState.editEvents.map(e =>
+                e.id === eventId ? { ...e, [field]: event.target.value } : e
+            );
+            updateState({ editEvents: newEditEvents });
+        }
+
+        function deleteEvent(eventId) {
+            if (appState.role !== 'Manager') return;
+            const newEditEvents = appState.editEvents.filter(e => e.id !== eventId);
+            updateState({ editEvents: newEditEvents });
+            showNotification('Event deleted from edit list.', 'info');
+        }
+
+        function addEvent() {
+            if (appState.role !== 'Manager') return;
+            const newEvent = {
+                id: 'new_' + Math.random().toString(36).substring(2, 9),
+                time: '00:00',
+                title: 'New Event',
+                location: 'Unknown',
+                city: '',
+                type: 'Logistics',
+                status: 'SCHEDULED',
+            };
+            const newEditEvents = [...appState.editEvents, newEvent];
+            updateState({ editEvents: newEditEvents });
+            showNotification('New event added for editing.', 'info');
+        }
+
+        // --- External Link Helpers ---
+        function openMap(locationQuery) {
+            window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locationQuery)}`, '_blank');
+        }
+
+        function openWeather(city) {
+            window.open(`https://www.google.com/search?q=weather+${encodeURIComponent(city)}`, '_blank');
+        }
+
+        // --- Initializations and Effects ---
+        let firestoreDocListenerRef = null;
+
+        function setupFirestoreListener(tourId) {
+            if (firestoreDocListenerRef) {
+                firestoreDocListenerRef(); // Unsubscribe previous listener
+                firestoreDocListenerRef = null;
+            }
+
+            if (!tourId || !MOCK_FIREBASE) { // Only mock setup Firestore listener
+                return;
+            }
+
+            firestoreDocListenerRef = db.collection('tours').doc(tourId).onSnapshot(doc => {
+                if (doc.exists) {
+                    const data = doc.data();
+                    const newEvents = data.events || [];
+                    const newHasChaos = data.hasChaos || false;
+
+                    // Only update if there are actual changes to prevent unnecessary re-renders
+                    const eventsChanged = JSON.stringify(newEvents) !== JSON.stringify(appState.events);
+                    const chaosChanged = newHasChaos !== appState.hasChaos;
+
+                    if (eventsChanged || chaosChanged) {
+                        updateState({
+                            events: newEvents,
+                            hasChaos: newHasChaos,
+                            mockTourDataExists: true // Ensure this is true if data comes back
+                        });
+                        if (newHasChaos && !appState.hasChaos) { // Only notify when chaos starts
+                            showNotification('Chaos detected in the tour schedule!', 'warning', 5000);
+                        }
+                    }
+                } else {
+                    // Tour document deleted or doesn't exist
+                    if (appState.tourId === tourId) { // Only react if this is the active tour
+                        showNotification('The active tour no longer exists or was deleted.', 'error', 10000);
+                        updateState({ tourId: '', events: [], view: 'login', mockTourDataExists: false });
+                    }
+                }
+            }, error => {
+                console.error("Firestore listener error:", error);
+                showNotification("Real-time updates failed.", 'error');
+            });
+
+            updateState({ firestoreListenerUnsubscribe: firestoreDocListenerRef });
+        }
+
+        // Firebase Auth listener (mocked)
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                updateState({ user: user, loading: false });
+                // If a user is logged in, but no tour is active, stay on login page
+                if (appState.tourId) {
+                    // If a tour was previously set (e.g., from local storage), try to join it
+                    joinTour();
+                } else {
+                    updateState({ view: 'login' });
+                }
+            } else {
+                // Not authenticated, or signed out. Force anonymous login (mocked).
+                if (!MOCK_FIREBASE) { // Only auto-sign in if not mocking
+                    auth.signInAnonymously().catch(error => console.error("Anonymous sign-in failed:", error));
+                } else {
+                    updateState({ user: null, view: 'login', loading: false });
+                }
+            }
+        });
+
+        // Current time interval for Night Watch mode
+        setInterval(() => {
+            if (appState.nightWatchMode) {
+                updateState({ currentTime: new Date() });
+            }
+        }, 60000); // Update every minute
+
+        // Effect to setup Firestore listener when tourId changes
+        let prevTourId = null;
+        let prevUserUid = null;
+        let prevView = null;
+        let prevIsEditing = null;
+
+        setInterval(() => {
+            const currentTourId = appState.tourId;
+            const currentUserUid = appState.user ? appState.user.uid : null;
+            const currentView = appState.view;
+            const currentIsEditing = appState.isEditing;
+
+            if (currentTourId && (currentTourId !== prevTourId || currentUserUid !== prevUserUid)) {
+                setupFirestoreListener(currentTourId);
+                prevTourId = currentTourId;
+                prevUserUid = currentUserUid;
+            } else if (!currentTourId && firestoreDocListenerRef) {
+                // If tourId becomes empty, unsubscribe
+                firestoreDocListenerRef();
+                firestoreDocListenerRef = null;
+                updateState({ firestoreListenerUnsubscribe: null });
+                prevTourId = null;
+            }
+
+            // Re-render if view or editing state changes, not handled by other specific updates
+            if (currentView !== prevView || currentIsEditing !== prevIsEditing) {
+                renderApp();
+                prevView = currentView;
+                prevIsEditing = currentIsEditing;
+            }
+        }, 500); // Check for state changes every 500ms for listener management
+
+        function toggleNightWatchMode() {
+            updateState({ nightWatchMode: !appState.nightWatchMode });
+        }
+
+        function showInstallModal() {
+            updateState({ showInstallModal: true });
+        }
+
+        // Initial render on DOMContentLoaded
+        document.addEventListener('DOMContentLoaded', () => {
+            updateState({ loading: true }); // Start with loading state
+            // Mock authentication to trigger render
+            if (MOCK_FIREBASE && !auth.currentUser) {
+                auth.signInAnonymously();
+            } else if (MOCK_FIREBASE && auth.currentUser) {
+                 updateState({ loading: false, user: auth.currentUser, view: 'login' });
+            }
+        });
+
+    </script>
+</body>
+</html>
