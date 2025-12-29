@@ -1,0 +1,701 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Map as MapIcon, Moon, Clock, Music, Coffee, Truck, AlertTriangle, 
+  CheckCircle, Navigation, Users, Bell, Mic2, Calendar, 
+  RefreshCw, LogIn, Share2, Lock, Shield, 
+  Edit3, Save, Plus, Trash2, X, Download, LogOut, Smartphone,
+  CloudSun, MapPin, Link as LinkIcon
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, signInAnonymously, signInWithCustomToken, User, onAuthStateChanged, signOut 
+} from 'firebase/auth';
+import { 
+  getFirestore, collection, doc, onSnapshot, updateDoc, 
+  setDoc, getDoc 
+} from 'firebase/firestore';
+
+// --- Firebase Config & Init ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// --- Tipos ---
+type EventType = 'travel' | 'food' | 'soundcheck' | 'show' | 'hotel' | 'logistic';
+type EventStatus = 'completed' | 'active' | 'upcoming' | 'delayed' | 'cancelled';
+type UserRole = 'manager' | 'crew' | null;
+
+interface TourEvent {
+  id: string;
+  date: string; // YYYY-MM-DD para ordenar cronológicamente por días
+  time: string;
+  title: string;
+  location: string;
+  city?: string;
+  mapsLink?: string; // Link directo a Google Maps
+  type: EventType;
+  status: EventStatus;
+  notes?: string;
+  order: number;
+}
+
+// LIENZO EN BLANCO: Sin eventos iniciales
+const INITIAL_EVENTS: TourEvent[] = [];
+
+export default function TourCommand() {
+  // Estados de Auth y Vista
+  const [user, setUser] = useState<User | null>(null);
+  const [view, setView] = useState<'login' | 'dashboard'>('login');
+  const [role, setRole] = useState<UserRole>(null);
+  
+  // Estados del Tour
+  const [tourId, setTourId] = useState('');
+  const [inputTourId, setInputTourId] = useState('');
+  
+  // Estados de la App
+  const [currentTime, setCurrentTime] = useState<string>('13:15');
+  const [events, setEvents] = useState<TourEvent[]>([]);
+  const [nightWatchMode, setNightWatchMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<'timeline' | 'map'>('timeline');
+  const [notifications, setNotifications] = useState<{id: number, msg: string, type: 'info'|'alert'}[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [hasChaos, setHasChaos] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  
+  // Estado de Edición
+  const [isEditing, setIsEditing] = useState(false);
+  const [editEvents, setEditEvents] = useState<TourEvent[]>([]); 
+
+  // 1. Inicializar Auth
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    return onAuthStateChanged(auth, setUser);
+  }, []);
+
+  // 2. Título Dinámico
+  useEffect(() => {
+    document.title = tourId ? `Tour: ${tourId} • TourCommand` : 'TourCommand • Login';
+  }, [tourId]);
+
+  // 3. Escuchar cambios en el Tour
+  useEffect(() => {
+    if (!user || !tourId || view !== 'dashboard') return;
+
+    setLoading(true);
+    const tourDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'tours', `tour_${tourId}`);
+    
+    const unsubscribe = onSnapshot(tourDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const loadedEvents = (data.events || []) as TourEvent[];
+        
+        // Ordenamiento por FECHA y luego por HORA
+        loadedEvents.sort((a, b) => {
+          if (a.date !== b.date) return a.date.localeCompare(b.date);
+          return a.time.localeCompare(b.time);
+        });
+        
+        if (!isEditing) {
+          setEvents(loadedEvents);
+        }
+        
+        // Verificar caos
+        const soundcheck = loadedEvents.find(e => e.type === 'soundcheck');
+        if (soundcheck && soundcheck.status === 'delayed' && !hasChaos) {
+           setHasChaos(true);
+           if (!isEditing) addNotification("ALERTA: Cronograma modificado", 'alert');
+        } else if (soundcheck && soundcheck.status !== 'delayed') {
+           setHasChaos(false);
+        }
+      } else {
+        addNotification("El Tour ID no existe o fue eliminado", 'alert');
+        setView('login');
+      }
+      setLoading(false);
+    }, (error) => {
+      console.error("Error:", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [tourId, view, user, isEditing]);
+
+  // --- Funciones de Gestión de Tour ---
+
+  const createTour = async () => {
+    if (!user) return;
+    setLoading(true);
+    const newId = `T-${Math.floor(1000 + Math.random() * 9000)}`;
+    
+    try {
+      const tourDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'tours', `tour_${newId}`);
+      await setDoc(tourDocRef, {
+        creatorId: user.uid,
+        createdAt: new Date().toISOString(),
+        events: INITIAL_EVENTS,
+        name: "Nuevo Tour"
+      });
+      
+      setTourId(newId);
+      setRole('manager');
+      setView('dashboard');
+      // Activar modo edición automáticamente al crear un tour vacío
+      setIsEditing(true);
+      setEditEvents([]);
+      addNotification(`Tour creado! Código: ${newId}`, 'info');
+    } catch (e) {
+      console.error(e);
+      addNotification("Error creando tour.", 'alert');
+    }
+    setLoading(false);
+  };
+
+  const joinTour = async () => {
+    if (!inputTourId) return;
+    setLoading(true);
+    const cleanId = inputTourId.trim().toUpperCase();
+    
+    try {
+      const tourDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'tours', `tour_${cleanId}`);
+      const docSnap = await getDoc(tourDocRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const isManager = data.creatorId === user?.uid;
+        setTourId(cleanId);
+        setRole(isManager ? 'manager' : 'crew');
+        setView('dashboard');
+        addNotification(isManager ? `Bienvenido Manager.` : `Conectado como Crew.`, 'info');
+      } else {
+        addNotification("Tour no encontrado.", 'alert');
+      }
+    } catch (e) {
+      console.error(e);
+      addNotification("Error de conexión", 'alert');
+    }
+    setLoading(false);
+  };
+
+  const resetIdentity = async () => {
+    setLoading(true);
+    try {
+      await signOut(auth);
+      await signInAnonymously(auth); 
+      addNotification("Identidad reseteada.", 'info');
+      setInputTourId(''); 
+    } catch (error) {
+      addNotification("Error al cambiar identidad", 'alert');
+    }
+    setLoading(false);
+  };
+
+  // --- Funciones de EDICIÓN ---
+
+  const toggleEditMode = () => {
+    if (isEditing) {
+      setIsEditing(false);
+    } else {
+      setEditEvents([...events]);
+      setIsEditing(true);
+      setActiveTab('timeline'); 
+    }
+  };
+
+  const handleEditChange = (id: string, field: keyof TourEvent, value: string) => {
+    setEditEvents(prev => prev.map(ev => 
+      ev.id === id ? { ...ev, [field]: value } : ev
+    ));
+  };
+
+  const deleteEvent = (id: string) => {
+    setEditEvents(prev => prev.filter(ev => ev.id !== id));
+  };
+
+  const addEvent = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const newEvent: TourEvent = {
+      id: Date.now().toString(),
+      date: editEvents.length > 0 ? editEvents[editEvents.length - 1].date : today, // Usar la última fecha o hoy
+      time: '12:00',
+      title: '',
+      location: '',
+      city: '',
+      mapsLink: '',
+      type: 'logistic',
+      status: 'upcoming',
+      order: editEvents.length + 1
+    };
+    setEditEvents([...editEvents, newEvent]);
+  };
+
+  const saveChanges = async () => {
+    if (!user || !tourId) return;
+    setLoading(true);
+    try {
+      const tourDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'tours', `tour_${tourId}`);
+      
+      // Ordenar por fecha y luego hora
+      const sortedEvents = [...editEvents].sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        return a.time.localeCompare(b.time);
+      });
+      
+      const indexedEvents = sortedEvents.map((ev, i) => ({...ev, order: i + 1}));
+      
+      await updateDoc(tourDocRef, { events: indexedEvents });
+      
+      setEvents(indexedEvents);
+      setIsEditing(false);
+      addNotification("Cronograma actualizado", 'info');
+    } catch (e) {
+      console.error(e);
+      addNotification("Error al guardar", 'alert');
+    }
+    setLoading(false);
+  };
+
+  // --- Helpers de Links Externos ---
+  
+  const openMap = (event: TourEvent) => {
+    if (event.mapsLink) {
+      window.open(event.mapsLink, '_blank');
+    } else {
+      const query = encodeURIComponent(`${event.location} ${event.city || ''}`);
+      window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+    }
+  };
+
+  const openWeather = (city: string = '') => {
+    const query = encodeURIComponent(`${city} weather`);
+    window.open(`https://www.google.com/search?q=${query}`, '_blank');
+  };
+
+  const resetTour = async () => {
+    if (!user || role !== 'manager') return;
+    try {
+      const tourDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'tours', `tour_${tourId}`);
+      await updateDoc(tourDocRef, { events: [] }); // Reset a vacío
+      setHasChaos(false);
+      addNotification("Tour vaciado", 'info');
+    } catch (e) { console.error(e); }
+  };
+
+  const addNotification = (msg: string, type: 'info'|'alert') => {
+    setNotifications(prev => [{id: Date.now(), msg, type}, ...prev]);
+  };
+
+  const getIcon = (type: EventType) => {
+    switch(type) {
+      case 'travel': return <Truck size={18} />;
+      case 'food': return <Coffee size={18} />;
+      case 'soundcheck': return <Mic2 size={18} />;
+      case 'show': return <Music size={18} />;
+      case 'hotel': return <Moon size={18} />;
+      case 'logistic': return <CheckCircle size={18} />;
+      default: return <Clock size={18} />;
+    }
+  };
+
+  const getStatusColor = (status: EventStatus) => {
+    switch(status) {
+      case 'active': return 'bg-emerald-500 text-white';
+      case 'completed': return 'bg-zinc-700 text-zinc-400';
+      case 'delayed': return 'bg-rose-600 text-white';
+      case 'cancelled': return 'bg-red-900 text-red-200 line-through';
+      default: return 'bg-zinc-800 text-zinc-100';
+    }
+  };
+  
+  // Helper para formatear fecha (YYYY-MM-DD a "Lunes 12")
+  const formatDateHeader = (dateStr: string) => {
+    if (!dateStr) return 'Fecha sin definir';
+    const date = new Date(dateStr + 'T00:00:00'); // T00... para evitar problemas de timezone local
+    return date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+  };
+
+  // --- VISTA: LOGIN ---
+  if (view === 'login') {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-900/20 via-zinc-950 to-zinc-950"></div>
+        <div className="z-10 w-full max-w-md space-y-8">
+          <div className="text-center">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent mb-2">TourCommand</h1>
+            <p className="text-zinc-500">Gestión de Giras en Tiempo Real</p>
+          </div>
+          <div className="bg-zinc-900/50 backdrop-blur border border-zinc-800 p-6 rounded-2xl shadow-2xl space-y-6">
+            <div className="space-y-3">
+              <label className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                <Users size={16} className="text-emerald-500"/> Unirse a un Tour existente
+              </label>
+              <div className="flex gap-2">
+                <input type="text" placeholder="CÓDIGO (ej: T-1234)" className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-4 py-3 text-center tracking-widest uppercase font-mono focus:outline-none focus:border-emerald-500 transition-colors" value={inputTourId} onChange={(e) => setInputTourId(e.target.value)} />
+                <button onClick={joinTour} disabled={loading || !inputTourId} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-6 rounded-lg font-medium transition-colors">{loading ? <RefreshCw className="animate-spin"/> : <LogIn />}</button>
+              </div>
+            </div>
+            
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-zinc-800"></div></div>
+              <div className="relative flex justify-center text-xs uppercase"><span className="bg-zinc-900 px-2 text-zinc-500">O si eres Manager</span></div>
+            </div>
+            
+            <button onClick={createTour} disabled={loading || !user} className="w-full bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2 group disabled:opacity-50">
+              <Shield size={18} className="group-hover:scale-110 transition-transform"/>{user ? 'Crear Nuevo Tour' : 'Conectando con DB...'}
+            </button>
+          </div>
+          <div className="flex justify-center">
+            <button onClick={resetIdentity} className="text-xs text-zinc-600 hover:text-zinc-400 flex items-center gap-2 border border-zinc-800 px-3 py-1.5 rounded-full hover:bg-zinc-900 transition-colors"><LogOut size={12}/> Nueva Identidad</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- VISTA: MODO GUARDIA NOCTURNA ---
+  if (nightWatchMode) {
+    return (
+      <div className="min-h-screen bg-black text-emerald-500 flex flex-col items-center justify-between p-6 relative overflow-hidden font-mono">
+        <div className="absolute inset-0 pointer-events-none opacity-10 bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.5)_50%)] bg-[length:100%_4px]" />
+        
+        <div className="w-full flex justify-between items-center z-10">
+          <div className="flex items-center gap-2">
+            <span className={`w-3 h-3 rounded-full ${loading ? 'bg-yellow-500' : 'bg-emerald-500'} animate-pulse`}></span>
+            <span className="text-sm tracking-widest uppercase flex items-center gap-2">TOUR: {tourId}</span>
+          </div>
+          <button onClick={() => setNightWatchMode(false)} className="border border-emerald-900 text-emerald-700 px-4 py-1 rounded hover:bg-emerald-900/20 text-xs">DESACTIVAR</button>
+        </div>
+
+        <div className="flex-1 flex flex-col justify-center items-center text-center z-10 w-full max-w-md">
+          {hasChaos ? (
+            <div className="animate-bounce bg-rose-950/50 border border-rose-600 p-8 rounded-xl w-full backdrop-blur-sm">
+              <AlertTriangle size={64} className="text-rose-500 mx-auto mb-4" />
+              <h1 className="text-4xl font-bold text-rose-500 mb-2">ATENCIÓN</h1>
+              <p className="text-rose-200 text-lg mb-6">CAMBIO CRÍTICO DETECTADO</p>
+              <div className="bg-black/50 p-4 rounded text-left border-l-4 border-rose-500 shadow-inner">
+                <p className="text-sm text-zinc-400">Origen: {role === 'manager' ? 'Tu Simulación' : 'Tour Manager'}</p>
+                <p className="text-white font-bold text-xl mt-1">Demora en Prueba de Sonido</p>
+                <p className="text-rose-400 mt-1">Nuevo horario: 20:15</p>
+              </div>
+              <button onClick={() => setNightWatchMode(false)} className="mt-8 bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 px-8 rounded-full w-full transition-colors">VER DETALLES</button>
+            </div>
+          ) : (
+            <>
+              <Clock size={48} className="mb-4 opacity-50" />
+              <h2 className="text-6xl font-bold mb-2 tracking-tighter">{currentTime}</h2>
+              <p className="text-emerald-700 mb-12">{role === 'manager' ? 'Modo Manager Activo' : 'Modo Staff Activo'}</p>
+              <div className="w-full bg-zinc-900/50 border border-zinc-800 p-6 rounded-lg text-left">
+                <p className="text-xs text-zinc-500 uppercase mb-2">Próximo Evento (Live Sync)</p>
+                <div className="flex justify-between items-end">
+                  <div>
+                    <h3 className="text-2xl text-white font-bold">Check-in Hotel</h3>
+                    <p className="text-zinc-400">City Center Hotel</p>
+                  </div>
+                  <span className="text-emerald-500 font-mono text-xl">16:00</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // --- VISTA: DASHBOARD PRINCIPAL ---
+  const displayEvents = isEditing ? editEvents : events;
+  
+  // Agrupar eventos por fecha
+  const groupedEvents: { [key: string]: TourEvent[] } = {};
+  displayEvents.forEach(ev => {
+    if (!groupedEvents[ev.date]) groupedEvents[ev.date] = [];
+    groupedEvents[ev.date].push(ev);
+  });
+  
+  const sortedDates = Object.keys(groupedEvents).sort();
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans pb-24 md:pb-0 relative">
+      
+      {/* Header */}
+      <header className="fixed top-0 w-full bg-zinc-900/95 backdrop-blur-md border-b border-zinc-800 z-50 px-4 py-3 flex justify-between items-center shadow-lg">
+        <div className="flex items-center gap-3">
+          <div>
+            <h1 className="text-lg font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">TourCommand</h1>
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <span className="font-mono bg-zinc-800 px-1 rounded text-zinc-300">ID: {tourId}</span>
+              <span className={`px-1 rounded text-[10px] uppercase font-bold ${role === 'manager' ? 'bg-indigo-900 text-indigo-300' : 'bg-zinc-700 text-zinc-400'}`}>
+                {role === 'manager' ? 'MANAGER' : 'CREW'}
+              </span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          {role === 'manager' && (
+            <button 
+              onClick={toggleEditMode}
+              className={`p-2 rounded-full transition-colors ${isEditing ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/20' : 'text-zinc-500 hover:text-white hover:bg-zinc-800'}`}
+              title={isEditing ? "Cancelar Edición" : "Editar Cronograma"}
+            >
+              {isEditing ? <X size={20}/> : <Edit3 size={20}/>}
+            </button>
+          )}
+          <button onClick={() => setShowInstallModal(true)} className="text-zinc-500 hover:text-white p-2" title="Instalar App">
+            <Download size={20} />
+          </button>
+          <button onClick={() => setNightWatchMode(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-full transition-colors">
+            <Moon size={20} />
+          </button>
+          <button onClick={() => { setTourId(''); setView('login'); }} className="text-zinc-500 hover:text-white p-2">
+            <LogIn size={20} className="rotate-180"/>
+          </button>
+        </div>
+      </header>
+
+      <main className="pt-20 px-4 max-w-3xl mx-auto min-h-screen">
+        
+        {/* Notificaciones */}
+        <div className="mb-6 space-y-2">
+           {notifications.map(n => (
+             <div key={n.id} className={`p-3 rounded-lg border flex items-start gap-3 shadow-xl animate-in fade-in slide-in-from-top-4 ${n.type === 'alert' ? 'bg-rose-950/80 border-rose-500/50 text-rose-100' : 'bg-zinc-800 border-zinc-700'}`}>
+               {n.type === 'alert' ? <AlertTriangle className="shrink-0" /> : <Bell className="shrink-0" />}
+               <div>
+                 <p className="font-medium text-sm">{n.msg}</p>
+                 <button onClick={() => setNotifications(prev => prev.filter(x => x.id !== n.id))} className="text-xs opacity-70 mt-1 underline">Descartar</button>
+               </div>
+             </div>
+           ))}
+        </div>
+
+        {/* Modal Instalar App */}
+        {showInstallModal && (
+          <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-md w-full p-6 relative">
+              <button onClick={() => setShowInstallModal(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
+              
+              <div className="text-center mb-6">
+                 <div className="bg-gradient-to-br from-indigo-500 to-cyan-500 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/30">
+                   <Smartphone size={32} className="text-white"/>
+                 </div>
+                 <h2 className="text-xl font-bold text-white mb-2">Instalar y Nombrar tu App</h2>
+              </div>
+              
+              {/* Contenido modal anterior... */}
+              <p className="text-zinc-400 text-center mb-4">Sigue las instrucciones en el chat para hostear.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Tabs */}
+        {!isEditing && (
+          <div className="flex gap-2 mb-6 bg-zinc-900 p-1 rounded-lg border border-zinc-800">
+            <button onClick={() => setActiveTab('timeline')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${activeTab === 'timeline' ? 'bg-zinc-800 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'}`}>
+              <Calendar size={16} /> Cronograma
+            </button>
+            <button onClick={() => setActiveTab('map')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${activeTab === 'map' ? 'bg-zinc-800 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'}`}>
+              <MapIcon size={16} /> Mapa Táctico
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'timeline' ? (
+          <div className="space-y-8 pb-32">
+            
+            {displayEvents.length === 0 && !isEditing && (
+              <div className="text-center py-20 opacity-50">
+                <p>No hay actividades.</p>
+                {role === 'manager' && <p className="text-sm mt-2">Toca el lápiz para editar.</p>}
+              </div>
+            )}
+
+            {sortedDates.map(dateStr => (
+              <div key={dateStr} className="relative">
+                {/* Encabezado de Fecha Pegajoso */}
+                <div className="sticky top-16 z-20 bg-zinc-950/90 backdrop-blur py-2 mb-4 border-b border-zinc-800/50">
+                  <h3 className="text-emerald-500 font-bold uppercase tracking-widest text-sm pl-2 border-l-4 border-emerald-500">
+                    {formatDateHeader(dateStr)}
+                  </h3>
+                </div>
+
+                <div className="space-y-4">
+                  {groupedEvents[dateStr].map((event, index) => {
+                    return (
+                      <div key={event.id} className="relative pl-8 group">
+                        
+                        {!isEditing && (
+                          <div className={`absolute left-0 top-1 w-6 h-6 rounded-full border-4 border-zinc-950 flex items-center justify-center z-10 transition-colors duration-500 ${
+                            event.status === 'completed' ? 'bg-zinc-600' :
+                            event.status === 'active' ? 'bg-emerald-500 animate-pulse ring-4 ring-emerald-500/20' :
+                            event.status === 'delayed' ? 'bg-rose-500' :
+                            'bg-zinc-800'
+                          }`}></div>
+                        )}
+
+                        <div className={`p-4 rounded-xl border transition-all duration-300 ${
+                          isEditing 
+                            ? 'bg-zinc-900 border-zinc-700 border-dashed hover:border-zinc-500'
+                            : event.status === 'active' 
+                              ? 'bg-zinc-900 border-emerald-500/50 shadow-lg' 
+                              : event.status === 'delayed'
+                                ? 'bg-rose-950/10 border-rose-500/50'
+                                : 'bg-zinc-900/50 border-zinc-800 hover:bg-zinc-800/50'
+                        }`}>
+                          {isEditing ? (
+                            /* EDICIÓN COMPLETA */
+                            <div className="flex gap-3 items-start">
+                               <button onClick={() => deleteEvent(event.id)} className="mt-1 text-zinc-600 hover:text-red-500 transition-colors p-1"><Trash2 size={16} /></button>
+                               <div className="flex-1 space-y-3">
+                                  {/* Fila 1: Fecha y Hora */}
+                                  <div className="flex gap-2">
+                                     <input type="date" value={event.date} onChange={(e) => handleEditChange(event.id, 'date', e.target.value)} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-zinc-400 text-sm focus:border-amber-500 outline-none" />
+                                     <input type="time" value={event.time} onChange={(e) => handleEditChange(event.id, 'time', e.target.value)} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-white font-mono text-sm w-24 focus:border-amber-500 outline-none" />
+                                     <select value={event.type} onChange={(e) => handleEditChange(event.id, 'type', e.target.value)} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-zinc-400 text-xs flex-1 focus:border-amber-500 outline-none">
+                                        <option value="logistic">Logística</option>
+                                        <option value="travel">Viaje</option>
+                                        <option value="food">Comida</option>
+                                        <option value="soundcheck">Sonido</option>
+                                        <option value="show">Show</option>
+                                        <option value="hotel">Hotel</option>
+                                     </select>
+                                  </div>
+                                  
+                                  {/* Fila 2: Título */}
+                                  <input type="text" value={event.title} onChange={(e) => handleEditChange(event.id, 'title', e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-white font-bold text-sm focus:border-amber-500 outline-none" placeholder="Título de la actividad" />
+                                  
+                                  {/* Fila 3: Ubicación y Link */}
+                                  <div className="grid grid-cols-2 gap-2">
+                                     <input type="text" value={event.location} onChange={(e) => handleEditChange(event.id, 'location', e.target.value)} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-zinc-400 text-xs focus:border-amber-500 outline-none" placeholder="Lugar / Venue" />
+                                     <input type="text" value={event.city || ''} onChange={(e) => handleEditChange(event.id, 'city', e.target.value)} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-zinc-400 text-xs focus:border-amber-500 outline-none" placeholder="Ciudad (Clima)" />
+                                  </div>
+                                  <div className="flex gap-2 items-center">
+                                     <MapPin size={14} className="text-zinc-500" />
+                                     <input type="text" value={event.mapsLink || ''} onChange={(e) => handleEditChange(event.id, 'mapsLink', e.target.value)} className="flex-1 bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-blue-400 text-xs focus:border-amber-500 outline-none" placeholder="Pegar link de Google Maps aquí..." />
+                                  </div>
+
+                                  {/* Fila 4: ESTADO MANUAL */}
+                                  <div className="flex gap-2 items-center border-t border-zinc-800 pt-2">
+                                     <span className="text-xs text-zinc-500 uppercase">Forzar Estado:</span>
+                                     <select value={event.status} onChange={(e) => handleEditChange(event.id, 'status', e.target.value)} className={`bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs focus:border-amber-500 outline-none font-bold ${event.status === 'delayed' ? 'text-red-400' : 'text-zinc-300'}`}>
+                                        <option value="upcoming">Pendiente (Gris)</option>
+                                        <option value="active">En Curso (Verde)</option>
+                                        <option value="completed">Finalizado (Oscuro)</option>
+                                        <option value="delayed">Demorado/Crítico (Rojo)</option>
+                                        <option value="cancelled">Cancelado (Tachado)</option>
+                                     </select>
+                                  </div>
+                               </div>
+                            </div>
+                          ) : (
+                            /* VISTA NORMAL */
+                            <>
+                              <div className="flex justify-between items-start mb-2">
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${getStatusColor(event.status)}`}>
+                                    {event.status === 'active' && <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"/>}
+                                    {event.status === 'upcoming' && 'Pendiente'}
+                                    {event.status === 'active' && 'En Curso'}
+                                    {event.status === 'completed' && 'Finalizado'}
+                                    {event.status === 'delayed' && 'CRÍTICO'}
+                                    {event.status === 'cancelled' && 'CANCELADO'}
+                                  </span>
+                                </div>
+                                <span className={`font-mono font-bold ${event.status === 'delayed' ? 'text-rose-400 underline decoration-wavy' : 'text-zinc-100'}`}>{event.time}</span>
+                              </div>
+
+                              <div className="flex items-start gap-3 mb-3">
+                                <div className={`p-2 rounded-lg bg-zinc-950 text-zinc-400 ${event.status === 'active' ? 'text-emerald-400' : ''}`}>
+                                  {getIcon(event.type)}
+                                </div>
+                                <div className="flex-1">
+                                  <h3 className="font-bold text-lg leading-tight">{event.title}</h3>
+                                  <div className="flex items-center gap-1 text-zinc-400 text-sm mt-1">
+                                    <Navigation size={12} />
+                                    {event.location}
+                                  </div>
+                                  {event.notes && (
+                                    <div className={`mt-2 text-xs p-2 rounded border-l-2 ${event.status === 'delayed' ? 'bg-rose-950/30 text-rose-300 border-rose-500' : 'bg-black/30 text-zinc-400 border-zinc-600'}`}>
+                                      {event.notes}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* BOTONES INTELIGENTES */}
+                              <div className="flex gap-2 border-t border-zinc-800 pt-2 mt-2">
+                                 <button 
+                                   onClick={() => openMap(event)}
+                                   className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded text-xs transition-colors border ${event.mapsLink ? 'bg-blue-900/20 text-blue-300 border-blue-900/50 hover:bg-blue-900/40' : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:bg-zinc-800 hover:text-white'}`}
+                                 >
+                                   {event.mapsLink ? <LinkIcon size={12}/> : <MapPin size={12}/>} 
+                                   {event.mapsLink ? 'Link Directo' : 'Mapa'}
+                                 </button>
+                                 <button 
+                                   onClick={() => openWeather(event.city || event.location)}
+                                   className="flex-1 flex items-center justify-center gap-2 bg-zinc-950 hover:bg-zinc-800 py-1.5 rounded text-xs text-zinc-400 hover:text-white transition-colors border border-zinc-800"
+                                 >
+                                   <CloudSun size={12}/> Clima {event.city ? `(${event.city})` : ''}
+                                 </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            
+            {isEditing && (
+               <button onClick={addEvent} className="w-full py-4 border-2 border-dashed border-zinc-800 rounded-xl text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 transition-colors flex items-center justify-center gap-2">
+                 <Plus size={20}/> Agregar Actividad
+               </button>
+            )}
+          </div>
+        ) : (
+          <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4 h-[60vh] relative overflow-hidden flex flex-col items-center justify-center text-zinc-500">
+             <div className="absolute inset-0 opacity-10" style={{backgroundImage: 'radial-gradient(#4f46e5 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
+             <p className="relative z-10 text-sm">Mapa Táctico de Tour ID: <span className="text-white font-bold">{tourId}</span></p>
+             <div className="mt-4 p-4 border border-dashed border-zinc-700 rounded text-center text-xs">
+                Sincronización Multidía Activa
+             </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* Controles MANAGER */}
+      {role === 'manager' && (
+        <>
+          {isEditing && (
+            <div className="fixed bottom-6 left-6 right-6 z-50 animate-in slide-in-from-bottom-10">
+               <button onClick={saveChanges} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-xl shadow-xl shadow-amber-900/50 flex items-center justify-center gap-2">
+                  <Save size={20}/> GUARDAR CAMBIOS
+               </button>
+            </div>
+          )}
+          
+          {!isEditing && (
+             <div className="fixed bottom-6 left-6">
+                <button onClick={resetTour} className="bg-black/50 hover:bg-red-900/50 text-zinc-600 hover:text-red-300 p-2 rounded-full border border-zinc-800 transition-colors text-[10px] flex items-center gap-1 backdrop-blur-sm" title="Borrar todo"><Trash2 size={14} /></button>
+             </div>
+          )}
+        </>
+      )}
+
+      {role === 'crew' && (
+        <div className="fixed bottom-6 left-0 right-0 text-center pointer-events-none">
+          <span className="bg-zinc-900/80 backdrop-blur border border-zinc-700 text-zinc-400 text-[10px] px-3 py-1 rounded-full"><Lock size={10} className="inline mr-1"/> Modo Visualización (Solo Lectura)</span>
+        </div>
+      )}
+    </div>
+  );
+}
